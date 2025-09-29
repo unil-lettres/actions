@@ -1,0 +1,212 @@
+name: "Commit Version"
+description: "Updates a version number in a specified file and commits the change to a repository"
+inputs:
+  file_path:
+    description: "Path to the file containing the version"
+    required: true
+  version:
+    description: "New version to set"
+    required: true
+  version_keys:
+    description: "Comma-separated list of version keys to update"
+    required: true
+  token:
+    description: "GitHub token"
+    required: false
+    default: ""
+  repository:
+    description: "Target repository (owner/repo format)"
+    required: false
+    default: ""
+  branch:
+    description: "Target branch"
+    required: false
+    default: "development"
+  commit_message:
+    description: "Commit message"
+    required: false
+    default: "chore: update {version_keys} to {version} in {file_path}"
+  version_pattern:
+    description: "Regex pattern to find version (use {key} placeholder)"
+    required: false
+    default: '{key}:\s*.*'
+  version_replacement:
+    description: "Replacement pattern (use {key} and {version} placeholders)"
+    required: false
+    default: '{key}: {version}'
+outputs:
+  success:
+    description: "Whether the version was successfully updated"
+    value: ${{ steps.update.outputs.success }}
+  old_version:
+    description: "Previous version found in file"
+    value: ${{ steps.update.outputs.old_version }}
+  new_version:
+    description: "New version that was set"
+    value: ${{ steps.update.outputs.new_version }}
+  updated_keys:
+    description: "List of keys that were updated"
+    value: ${{ steps.update.outputs.updated_keys }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Setup variables
+      shell: bash
+      run: |
+        if [ -n "${{ inputs.repository }}" ]; then
+          echo "TARGET_REPO=${{ inputs.repository }}" >> $GITHUB_ENV
+        else
+          echo "TARGET_REPO=${{ github.repository }}" >> $GITHUB_ENV
+        fi
+        
+        if [ -n "${{ inputs.token }}" ]; then
+          echo "TARGET_TOKEN=${{ inputs.token }}" >> $GITHUB_ENV
+        elif [ -z "${{ inputs.repository }}" ]; then
+          echo "TARGET_TOKEN=${{ github.token }}" >> $GITHUB_ENV
+        else
+          echo "Error: Token is required when targeting a different repository"
+          exit 1
+        fi
+
+    - name: Checkout target repository
+      uses: actions/checkout@v5
+      with:
+        repository: ${{ env.TARGET_REPO }}
+        ref: ${{ inputs.branch }}
+        token: ${{ env.TARGET_TOKEN }}
+        path: target-repo
+
+    - id: update
+      name: Update version in file
+      shell: bash
+      working-directory: target-repo
+      run: |
+        FILE="${{ inputs.file_path }}"
+        NEW_VERSION="${{ inputs.version }}"
+        PATTERN="${{ inputs.version_pattern }}"
+        REPLACEMENT="${{ inputs.version_replacement }}"
+        VERSION_KEYS_INPUT="${{ inputs.version_keys }}"
+        
+        # Validations
+        if [ -z "$FILE" ] || [ "$FILE" = " " ]; then
+          echo "Error: file_path cannot be empty"
+          echo "success=false" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+
+        if [ -z "$NEW_VERSION" ] || [ "$NEW_VERSION" = " " ]; then
+          echo "Error: version cannot be empty"
+          echo "success=false" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+
+        if [ -z "$VERSION_KEYS_INPUT" ] || [ "$VERSION_KEYS_INPUT" = " " ]; then
+          echo "Error: version_keys cannot be empty"
+          echo "success=false" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+
+        if [ ! -f "$FILE" ]; then
+          echo "Error: File $FILE not found"
+          echo "success=false" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+
+        # Convert comma-separated string to array and trim whitespace
+        IFS=',' read -ra VERSION_KEYS_ARRAY <<< "$VERSION_KEYS_INPUT"
+        for i in "${!VERSION_KEYS_ARRAY[@]}"; do
+          VERSION_KEYS_ARRAY[i]=$(echo "${VERSION_KEYS_ARRAY[i]}" | xargs)
+        done
+
+        # Initialize tracking variables
+        UPDATED_KEYS_LIST=""
+        ALL_OLD_VERSIONS=""
+        FIRST_OLD_VERSION=""
+        SUCCESS_COUNT=0
+        
+        # Process each version key
+        for VERSION_KEY in "${VERSION_KEYS_ARRAY[@]}"; do
+          echo "Processing version key: $VERSION_KEY"
+          
+          # Replace placeholders in pattern and replacement for this key
+          KEY_PATTERN=${PATTERN//\{key\}/$VERSION_KEY}
+          KEY_REPLACEMENT=${REPLACEMENT//\{key\}/$VERSION_KEY}
+          KEY_REPLACEMENT=${KEY_REPLACEMENT//\{version\}/$NEW_VERSION}
+
+          # Extract old version for this key - handle JSON, YAML and ENV formats
+          if [[ "$FILE" == *.json ]]; then
+            OLD_VERSION=$(grep -oP "(?<=\"$VERSION_KEY\":\s\")[^\"]*" "$FILE" 2>/dev/null || echo "unknown")
+          elif [[ "$FILE" == *.yml ]] || [[ "$FILE" == *.yaml ]]; then
+            OLD_VERSION=$(grep -oP "(?<=^$VERSION_KEY:\s).*$" "$FILE" 2>/dev/null | sed 's/[[:space:]]*$//' || echo "unknown")
+          else
+            # Environment file format: KEY=value (fallback for .env, .properties, etc.)
+            OLD_VERSION=$(grep -oP "(?<=^$VERSION_KEY=).*$" "$FILE" 2>/dev/null | sed 's/[[:space:]]*$//' || echo "unknown")
+          fi
+          
+          echo "Updating $VERSION_KEY from '$OLD_VERSION' to '$NEW_VERSION' in $FILE"
+          
+          # Track versions and keys
+          if [ -z "$FIRST_OLD_VERSION" ]; then
+            FIRST_OLD_VERSION="$OLD_VERSION"
+          fi
+          ALL_OLD_VERSIONS="$ALL_OLD_VERSIONS$VERSION_KEY: $OLD_VERSION; "
+          
+          # Update version using sed for this specific key
+          if sed -i.bak -E "s|$KEY_PATTERN|$KEY_REPLACEMENT|g" "$FILE"; then
+            SUCCESS_COUNT=$((SUCCESS_COUNT + 1))
+            if [ -z "$UPDATED_KEYS_LIST" ]; then
+              UPDATED_KEYS_LIST="$VERSION_KEY"
+            else
+              UPDATED_KEYS_LIST="$UPDATED_KEYS_LIST, $VERSION_KEY"
+            fi
+          else
+            echo "Error: Failed to update $VERSION_KEY in $FILE"
+          fi
+        done
+        
+        # Clean up backup file if it exists
+        rm -f "$FILE.bak"
+        
+        # Set outputs
+        echo "old_version=$FIRST_OLD_VERSION" >> $GITHUB_OUTPUT
+        echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+        echo "updated_keys=$UPDATED_KEYS_LIST" >> $GITHUB_OUTPUT
+
+        # Check overall success
+        if [ $SUCCESS_COUNT -eq ${#VERSION_KEYS_ARRAY[@]} ]; then
+          echo "success=true" >> $GITHUB_OUTPUT
+          echo "All version keys updated successfully: $UPDATED_KEYS_LIST"
+        elif [ $SUCCESS_COUNT -gt 0 ]; then
+          echo "success=false" >> $GITHUB_OUTPUT
+          echo "Error: Only $SUCCESS_COUNT out of ${#VERSION_KEYS_ARRAY[@]} version keys were updated successfully"
+          exit 1
+        else
+          echo "success=false" >> $GITHUB_OUTPUT
+          exit 1
+        fi
+
+    - name: Commit and push changes
+      shell: bash
+      working-directory: target-repo
+      run: |
+        git config user.name "github-actions[bot]"
+        git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+        if git diff --quiet; then
+          echo "No changes to commit"
+          exit 0
+        fi
+
+        git add "${{ inputs.file_path }}"
+
+        # Replace placeholders in commit message
+        COMMIT_MSG="${{ inputs.commit_message }}"
+        COMMIT_MSG=${COMMIT_MSG//\{version\}/${{ inputs.version }}}
+        COMMIT_MSG=${COMMIT_MSG//\{file_path\}/${{ inputs.file_path }}}
+        COMMIT_MSG=${COMMIT_MSG//\{version_keys\}/${{ steps.update.outputs.updated_keys }}}
+
+        git commit -m "$COMMIT_MSG"
+        git push origin ${{ inputs.branch }}
+
+        echo "Changes committed and pushed successfully"
