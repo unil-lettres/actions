@@ -1,7 +1,5 @@
 # GitHub Actions Collection
 
-Collection of reusable GitHub composite actions.
-
 Actions:
  - commit-version: update version string(s) in a file and commit the change.
  - docker-build: build & push a single-platform image; outputs a digest artifact.
