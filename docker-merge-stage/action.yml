@@ -34,7 +34,8 @@ runs:
       shell: bash
       run: |
         SERVICE='${{ inputs.service }}'
-        SHORT_SHA=$(git rev-parse --short HEAD)
+        FULL_SHA='${{ github.sha }}'
+        SHORT_SHA="${FULL_SHA:0:7}"
         TIMESTAMP=$(date -u +"%Y%m%d%H%M%S")
         if [ -n "$SERVICE" ]; then
           ADDITIONAL_TAG="${SERVICE}-stage-${SHORT_SHA}-${TIMESTAMP}"

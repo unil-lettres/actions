@@ -54,12 +54,13 @@ runs:
             fi
           fi
         else
-          SHORT=$(git rev-parse --short HEAD)
+          FULL_SHA='${{ github.sha }}'
+          SHORT_SHA="${FULL_SHA:0:7}"
           TS=$(date -u +"%Y%m%d%H%M%S")
           if [ -n "$SERVICE" ]; then
-            TAG="${SERVICE}-${LATEST}-${SHORT}-${TS}"
+            TAG="${SERVICE}-${LATEST}-${SHORT_SHA}-${TS}"
           else
-            TAG="${LATEST}-${SHORT}-${TS}"
+            TAG="${LATEST}-${SHORT_SHA}-${TS}"
           fi
         fi
         echo "additional_tag=$TAG" >> "$GITHUB_OUTPUT"
