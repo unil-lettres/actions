@@ -1,0 +1,76 @@
+name: Merge images service for production
+description: Download digests, compute tag, merge multi-arch, expose tag output
+inputs:
+  service:
+    description: Service name, will be used as tag prefix (e.g. app, worker)
+    required: true
+  image_repository:
+    description: Docker Hub repository (e.g. org/name)
+    required: true
+  dockerhub_username:
+    description: Docker Hub username
+    required: true
+  dockerhub_token:
+    description: Docker Hub token
+    required: true
+outputs:
+  tag:
+    description: Published tag
+    value: ${{ steps.set-tag.outputs.tag }}
+
+runs:
+  using: composite
+  steps:
+    - name: Download digests
+      uses: actions/download-artifact@v4
+      with:
+        path: ${{ runner.temp }}/digests
+        pattern: digests-${{ inputs.service }}-*
+        merge-multiple: true
+
+    - name: Get latest tag
+      id: get_tags
+      uses: JinoArch/get-latest-tag@latest
+
+    - name: Compute additional tag
+      id: compute
+      shell: bash
+      run: |
+        SERVICE='${{ inputs.service }}'
+        if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+          if [[ "${GITHUB_REF}" == "refs/heads/master" ]]; then
+            TAG="${SERVICE}-latest"
+          else
+            TAG="${SERVICE}-${{ steps.get_tags.outputs.latestTag }}"
+          fi
+        else
+          LATEST='${{ steps.get_tags.outputs.latestTag }}'
+          SHORT=$(git rev-parse --short HEAD)
+          TS=$(date -u +"%Y%m%d%H%M%S")
+          TAG="${SERVICE}-${LATEST}-${SHORT}-${TS}"
+        fi
+        echo "additional_tag=$TAG" >> $GITHUB_OUTPUT
+
+    - name: Merge (push)
+      if: github.event_name == 'push'
+      uses: unil-lettres/actions/docker-merge@v2.1.0
+      with:
+        image_repository: ${{ inputs.image_repository }}
+        tag: ${{ steps.compute.outputs.additional_tag }}
+        dockerhub_username: ${{ inputs.dockerhub_username }}
+        dockerhub_token: ${{ inputs.dockerhub_token }}
+
+    - name: Merge (schedule)
+      if: github.event_name == 'schedule'
+      uses: unil-lettres/actions/docker-merge@v2.1.0
+      with:
+        image_repository: ${{ inputs.image_repository }}
+        tag: ${{ inputs.service }}-latest
+        additional_tag: ${{ steps.compute.outputs.additional_tag }}
+        dockerhub_username: ${{ inputs.dockerhub_username }}
+        dockerhub_token: ${{ inputs.dockerhub_token }}
+
+    - name: Set output tag
+      id: set-tag
+      shell: bash
+      run: echo "tag=${{ steps.compute.outputs.additional_tag }}" >> $GITHUB_OUTPUT
