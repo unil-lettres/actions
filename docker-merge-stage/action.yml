@@ -3,7 +3,8 @@ description: Download digests, compute tag, merge multi-arch, expose tag output
 inputs:
   service:
     description: Service name, will be used as tag prefix (e.g. app, worker)
-    required: true
+    required: false
+    default: ''
   image_repository:
     description: Docker Hub repository (e.g. org/name)
     required: true
@@ -25,23 +26,28 @@ runs:
       uses: actions/download-artifact@v4
       with:
         path: ${{ runner.temp }}/digests
-        pattern: digests-${{ inputs.service }}-*
+        pattern: digests-${{ inputs.service != '' && format('{0}-', inputs.service) || '' }}*
         merge-multiple: true
 
     - name: Compute additional tag
       id: compute
       shell: bash
       run: |
-        SHORT_SHA=$(echo $(git rev-parse HEAD) | cut -c1-7)
+        SERVICE='${{ inputs.service }}'
+        SHORT_SHA=$(git rev-parse --short HEAD)
         TIMESTAMP=$(date -u +"%Y%m%d%H%M%S")
-        ADDITIONAL_TAG="${{ inputs.service }}-stage-${SHORT_SHA}-${TIMESTAMP}"
-        echo "additional_tag=$ADDITIONAL_TAG" >> $GITHUB_OUTPUT
+        if [ -n "$SERVICE" ]; then
+          ADDITIONAL_TAG="${SERVICE}-stage-${SHORT_SHA}-${TIMESTAMP}"
+        else
+          ADDITIONAL_TAG="stage-${SHORT_SHA}-${TIMESTAMP}"
+        fi
+        echo "additional_tag=$ADDITIONAL_TAG" >> "$GITHUB_OUTPUT"
 
     - name: Merge & push
-      uses: unil-lettres/actions/docker-merge@v2.1.0
+      uses: unil-lettres/actions/docker-merge@v2.2.0
       with:
         image_repository: ${{ inputs.image_repository }}
-        tag: ${{ inputs.service }}-stage-latest
+        tag: ${{ inputs.service != '' && format('{0}-stage-latest', inputs.service) || 'stage-latest' }}
         additional_tag: ${{ steps.compute.outputs.additional_tag }}
         dockerhub_username: ${{ inputs.dockerhub_username }}
         dockerhub_token: ${{ inputs.dockerhub_token }}

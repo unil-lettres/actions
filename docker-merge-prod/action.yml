@@ -3,7 +3,8 @@ description: Download digests, compute tag, merge multi-arch, expose tag output
 inputs:
   service:
     description: Service name, will be used as tag prefix (e.g. app, worker)
-    required: true
+    required: false
+    default: ''
   image_repository:
     description: Docker Hub repository (e.g. org/name)
     required: true
@@ -25,7 +26,7 @@ runs:
       uses: actions/download-artifact@v4
       with:
         path: ${{ runner.temp }}/digests
-        pattern: digests-${{ inputs.service }}-*
+        pattern: digests-${{ inputs.service != '' && format('{0}-', inputs.service) || '' }}*
         merge-multiple: true
 
     - name: Get latest tag
@@ -37,23 +38,35 @@ runs:
       shell: bash
       run: |
         SERVICE='${{ inputs.service }}'
-        if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
-          if [[ "${GITHUB_REF}" == "refs/heads/master" ]]; then
-            TAG="${SERVICE}-latest"
+        LATEST='${{ steps.get_tags.outputs.latestTag }}'
+        if [[ "${GITHUB_EVENT_NAME}" == 'push' ]]; then
+          if [[ "${GITHUB_REF}" == 'refs/heads/master' ]]; then
+            if [ -n "$SERVICE" ]; then
+              TAG="${SERVICE}-latest"
+            else
+              TAG="latest"
+            fi
           else
-            TAG="${SERVICE}-${{ steps.get_tags.outputs.latestTag }}"
+            if [ -n "$SERVICE" ]; then
+              TAG="${SERVICE}-${LATEST}"
+            else
+              TAG="$LATEST"
+            fi
           fi
         else
-          LATEST='${{ steps.get_tags.outputs.latestTag }}'
           SHORT=$(git rev-parse --short HEAD)
           TS=$(date -u +"%Y%m%d%H%M%S")
-          TAG="${SERVICE}-${LATEST}-${SHORT}-${TS}"
+          if [ -n "$SERVICE" ]; then
+            TAG="${SERVICE}-${LATEST}-${SHORT}-${TS}"
+          else
+            TAG="${LATEST}-${SHORT}-${TS}"
+          fi
         fi
-        echo "additional_tag=$TAG" >> $GITHUB_OUTPUT
+        echo "additional_tag=$TAG" >> "$GITHUB_OUTPUT"
 
     - name: Merge (push)
       if: github.event_name == 'push'
-      uses: unil-lettres/actions/docker-merge@v2.1.0
+      uses: unil-lettres/actions/docker-merge@v2.2.0
       with:
         image_repository: ${{ inputs.image_repository }}
         tag: ${{ steps.compute.outputs.additional_tag }}
@@ -62,10 +75,10 @@ runs:
 
     - name: Merge (schedule)
       if: github.event_name == 'schedule'
-      uses: unil-lettres/actions/docker-merge@v2.1.0
+      uses: unil-lettres/actions/docker-merge@v2.2.0
       with:
         image_repository: ${{ inputs.image_repository }}
-        tag: ${{ inputs.service }}-latest
+        tag: ${{ inputs.service != '' && format('{0}-latest', inputs.service) || 'latest' }}
         additional_tag: ${{ steps.compute.outputs.additional_tag }}
         dockerhub_username: ${{ inputs.dockerhub_username }}
         dockerhub_token: ${{ inputs.dockerhub_token }}
