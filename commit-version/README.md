@@ -1,18 +1,18 @@
 # Commit Version Action
 
-A simple GitHub Actions composite that updates a version number in a specified file and commits the change.
+A GitHub Actions composite that updates one or more version values in a target file and commits the change.
 
 ## Inputs
 
 | Input | Description | Required | Default |
 |-------|-------------|----------|---------|
 | `file_path` | Path to the file containing the version | Yes | - |
-| `version` | New version to set | Yes | - |
-| `version_keys` | Comma-separated list of version keys to update | Yes | - |
+| `versions` | Comma-separated list of versions (positional to `version_keys`) | Yes | - |
+| `version_keys` | Comma-separated list of version keys to update (must match `versions` length) | Yes | - |
 | `token` | GitHub token for authentication | No | Auto-detected (`github.token` for same repo) |
 | `repository` | Target repository (owner/repo format) | No | Current repository |
 | `branch` | Target branch | No | `development` |
-| `commit_message` | Commit message (use `{version}`, `{version_keys}`, and `{file_path}` placeholders) | No | `chore: update {version_keys} to {version} in {file_path}` |
+| `commit_message` | Commit message (placeholders: `{file_path}`, `{version_keys}`, `{versions}`, `{version_pairs}`) | No | `chore: update {version_pairs} in {file_path}` |
 | `version_pattern` | Regex pattern to find version (use `{key}` placeholder) | No | `{key}:\s*.*` |
 | `version_replacement` | Replacement pattern (use `{key}` and `{version}` placeholders) | No | `{key}: {version}` |
 
@@ -21,9 +21,10 @@ A simple GitHub Actions composite that updates a version number in a specified f
 | Output | Description |
 |--------|-------------|
 | `success` | Whether the version was successfully updated |
-| `old_version` | Previous version found in file |
-| `new_version` | New version that was set |
+| `old_versions` | Comma-separated list of previous versions (aligned to `version_keys`) |
+| `new_versions` | Comma-separated list of new versions (aligned to `version_keys`) |
 | `updated_keys` | List of keys that were updated |
+| `version_pairs` | Comma-separated `key=version` pairs after update |
 
 ## Authentication
 
@@ -44,47 +45,48 @@ permissions:
 
 ## Examples
 
-### Default usage (yml file, multiple keys)
+### Multiple keys with distinct versions (YAML file)
 
 ```yaml
   uses: ./.github/actions/commit-version
   with:
-    file_path: helm/values.yaml
-    version: "v1.2.3"
+    file_path: path/values.yaml
     version_keys: "app_image_tag, worker_image_tag"
+    versions: "app-v1.2.3, worker-v1.2.3"
+    commit_message: "chore: update {version_pairs} in {file_path}"
 ```
 
 This will update:
 ```yaml
-app_image_tag: latest
-worker_image_tag: latest
+app_image_tag: old-app-version
+worker_image_tag: old-worker-version
 ```
 to:
 ```yaml
-app_image_tag: v1.2.3
-worker_image_tag: v1.2.3
+app_image_tag: app-v1.2.3
+worker_image_tag: worker-v1.2.3
 ```
 
-### With custom patterns (json file)
+### Json file pattern
 
 ```yaml
   uses: ./.github/actions/commit-version
   with:
-    file_path: site/package.json
-    version: "1.2.3"
+    file_path: path/package.json
     version_keys: "version"
+    versions: "1.2.3"
     version_pattern: '"{key}":\s*"[^"]*"'
     version_replacement: '"{key}": "{version}"'
 ```
 
-### With custom patterns (env file)
+### Env file pattern
 
 ```yaml
   uses: ./.github/actions/commit-version
   with:
-    file_path: app/version.txt
-    version: "2.0.0"
+    file_path: path/version.txt
     version_keys: "VERSION"
+    versions: "2.0.0"
     version_pattern: '{key}=.*'
     version_replacement: '{key}={version}'
 ```
@@ -94,9 +96,9 @@ worker_image_tag: v1.2.3
 ```yaml
   uses: ./.github/actions/commit-version
   with:
-    file_path: values.yaml
-    version: "1.5.0"
+    file_path: path/values.yaml
     version_keys: "app_image_tag"
+    versions: "1.5.0"
     token: ${{ secrets.PAT_TOKEN }}
     repository: myorg/helm-charts
     branch: development
