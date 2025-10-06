@@ -22,6 +22,10 @@ inputs:
   dockerhub_token:
     description: Docker Hub access token/password
     required: true
+  build_args:
+    description: Optional build arguments to pass to the Docker build
+    required: false
+    default: ""
 
 runs:
   using: composite
@@ -56,6 +60,7 @@ runs:
         target: ${{ inputs.target }}
         platforms: ${{ inputs.platform }}
         labels: ${{ steps.meta.outputs.labels }}
+        build-args: ${{ inputs.build_args }}
         outputs: type=image,"name=${{ inputs.image_repository }}",push-by-digest=true,name-canonical=true,push=true
 
     - name: Export digest
