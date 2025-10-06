@@ -4,9 +4,6 @@ inputs:
   dockerfile:
     description: Path to the Dockerfile
     required: true
-  target:
-    description: Multi-stage target to build
-    required: true
   platform:
     description: Target platform (e.g., linux/amd64)
     required: true
@@ -22,8 +19,12 @@ inputs:
   dockerhub_token:
     description: Docker Hub access token/password
     required: true
+  target:
+    description: Optional multi-stage target
+    required: false
+    default: ""
   build_args:
-    description: Optional build arguments to pass to the Docker build
+    description: Optional build arguments
     required: false
     default: ""
 
