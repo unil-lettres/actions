@@ -5,6 +5,10 @@ inputs:
     description: Service name, will be used as tag prefix (e.g. app, worker)
     required: false
     default: ''
+  tag:
+    description: Specific tag to use (optional, overrides auto-detected latest tag)
+    required: false
+    default: ''
   image_repository:
     description: Docker Hub repository (e.g. org/name)
     required: true
@@ -37,32 +41,27 @@ runs:
       id: compute
       shell: bash
       run: |
-        SERVICE='${{ inputs.service }}'
-        LATEST='${{ steps.get_tags.outputs.latestTag }}'
-        if [[ "${GITHUB_EVENT_NAME}" == 'push' ]]; then
-          if [[ "${GITHUB_REF}" == 'refs/heads/master' ]]; then
-            if [ -n "$SERVICE" ]; then
-              TAG="${SERVICE}-latest"
-            else
-              TAG="latest"
-            fi
-          else
-            if [ -n "$SERVICE" ]; then
-              TAG="${SERVICE}-${LATEST}"
-            else
-              TAG="$LATEST"
-            fi
-          fi
+        # Determine the base tag
+        LATEST='${{ inputs.tag || steps.get_tags.outputs.latestTag }}'
+
+        # Determine the tag prefix based on service input
+        PREFIX='${{ inputs.service && format('{0}-', inputs.service) || '' }}'
+
+        # Compute the tag based on event type and ref
+        if [[ "${GITHUB_EVENT_NAME}" == 'push' && "${GITHUB_REF}" =~ ^refs/tags/.*$ ]]; then
+          # Tag push
+          TAG="${PREFIX}${LATEST}"
+        elif [[ "${GITHUB_EVENT_NAME}" == 'push' ]]; then
+          # Branch push
+          TAG="${PREFIX}latest"
         else
+          # Scheduled
           FULL_SHA='${{ github.sha }}'
           SHORT_SHA="${FULL_SHA:0:7}"
           TS=$(date -u +"%Y%m%d%H%M%S")
-          if [ -n "$SERVICE" ]; then
-            TAG="${SERVICE}-${LATEST}-${SHORT_SHA}-${TS}"
-          else
-            TAG="${LATEST}-${SHORT_SHA}-${TS}"
-          fi
+          TAG="${PREFIX}${LATEST}-${SHORT_SHA}-${TS}"
         fi
+
         echo "additional_tag=$TAG" >> "$GITHUB_OUTPUT"
 
     - name: Merge (push)
