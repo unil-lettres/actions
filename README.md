@@ -6,5 +6,6 @@ Actions:
  - docker-merge: create a multi-architecture manifest from previously built digests.
  - docker-merge-stage: download digests, compute stage tag, merge multi-arch, output tag.
  - docker-merge-prod: download digests, compute prod tag (conditional by event), merge multi-arch, output tag.
+ - job-execution: determine whether jobs should run based on event type and VERSION file changes.
 
 For full inputs, outputs, and examples see the README (if present) or action.yml inside each directory.

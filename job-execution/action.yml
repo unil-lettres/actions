@@ -1,0 +1,86 @@
+name: 'Determine Job Execution'
+description: 'Evaluates whether merge-build and commit jobs should run based on event type and version changes'
+
+inputs:
+  dockerhub_username:
+    description: 'Docker Hub username'
+    required: true
+  dockerhub_token:
+    description: 'Docker Hub token'
+    required: true
+  image_repository:
+    description: 'Docker Hub repository name'
+    required: true
+
+outputs:
+  run-merge-build:
+    description: 'Whether merge-build job should run'
+    value: ${{ steps.determine.outputs.run-merge-build }}
+  run-commit:
+    description: 'Whether commit job should run'
+    value: ${{ steps.determine.outputs.run-commit }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ inputs.dockerhub_username }}
+        password: ${{ inputs.dockerhub_token }}
+
+    - name: Check if VERSION file changed
+      id: check-version
+      shell: bash
+      run: |
+        # Check if VERSION file exists
+        if [ ! -f VERSION ]; then
+          echo "ERROR: VERSION file not found"
+          exit 1
+        fi
+
+        # Read current version from VERSION file
+        CURRENT_VERSION=$(cat VERSION | tr -d '\n')
+        VERSION_TAG="v${CURRENT_VERSION}"
+        REPO="${{ inputs.image_repository }}"
+
+        echo "Checking if tag ${REPO}:${VERSION_TAG} exists in DockerHub..."
+
+        if docker manifest inspect "${REPO}:${VERSION_TAG}" >/dev/null 2>&1; then
+          echo "Tag ${REPO}:${VERSION_TAG} already exists in DockerHub"
+          echo "version-changed=false" >> $GITHUB_OUTPUT
+        else
+          echo "Tag ${REPO}:${VERSION_TAG} does not exist - new version detected"
+          echo "version-changed=true" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Determine jobs execution
+      id: determine
+      shell: bash
+      run: |
+        echo "Event: ${{ github.event_name }}"
+        echo "Ref type: ${{ github.ref_type }}"
+        echo "VERSION changed: ${{ steps.check-version.outputs.version-changed }}"
+
+        # Determine if merge/build should run
+        # Conditions: push + tag + VERSION changed OR push + not tag OR schedule
+        if [[ "${{ github.event_name }}" == "push" && "${{ github.ref_type }}" == "tag" && "${{ steps.check-version.outputs.version-changed }}" == "true" ]] || \
+           [[ "${{ github.event_name }}" == "push" && "${{ github.ref_type }}" != "tag" ]] || \
+           [[ "${{ github.event_name }}" == "schedule" ]]; then
+          echo "run-merge-build=true" >> $GITHUB_OUTPUT
+          echo "Merge/Build should run"
+        else
+          echo "run-merge-build=false" >> $GITHUB_OUTPUT
+          echo "Merge/Build should NOT run"
+        fi
+
+        # Determine if commit should run
+        # Conditions: push + tag + VERSION changed OR schedule
+        if [[ "${{ github.event_name }}" == "push" && "${{ github.ref_type }}" == "tag" && "${{ steps.check-version.outputs.version-changed }}" == "true" ]] || \
+           [[ "${{ github.event_name }}" == "schedule" ]]; then
+          echo "run-commit=true" >> $GITHUB_OUTPUT
+          echo "Commit should run"
+        else
+          echo "run-commit=false" >> $GITHUB_OUTPUT
+          echo "Commit should NOT run"
+        fi
