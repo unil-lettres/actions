@@ -19,6 +19,10 @@ inputs:
   dockerhub_token:
     description: Docker Hub access token/password
     required: true
+  context:
+    description: Context path for the Docker build
+    required: false
+    default: "./"
   target:
     description: Optional multi-stage target
     required: false
@@ -56,7 +60,7 @@ runs:
       id: build
       uses: docker/build-push-action@v6
       with:
-        context: ./
+        context: ${{ inputs.context }}
         file: ${{ inputs.dockerfile }}
         target: ${{ inputs.target }}
         platforms: ${{ inputs.platform }}
