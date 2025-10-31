@@ -1,9 +1,6 @@
 name: Docker Build and Upload Digest
 description: Build a Docker image for a platform, push by digest, and upload the digest artifact
 inputs:
-  dockerfile:
-    description: Path to the Dockerfile
-    required: true
   platform:
     description: Target platform (e.g., linux/amd64)
     required: true
@@ -19,6 +16,10 @@ inputs:
   dockerhub_token:
     description: Docker Hub access token/password
     required: true
+  dockerfile:
+    description: Path to the Dockerfile
+    required: false
+    default: "./Dockerfile"
   context:
     description: Context path for the Docker build
     required: false

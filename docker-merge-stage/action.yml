@@ -1,10 +1,6 @@
 name: Merge images service for staging
 description: Download digests, compute tag, merge multi-arch, expose tag output
 inputs:
-  service:
-    description: Service name, will be used as tag prefix (e.g. app, worker)
-    required: false
-    default: ''
   image_repository:
     description: Docker Hub repository (e.g. org/name)
     required: true
@@ -14,6 +10,10 @@ inputs:
   dockerhub_token:
     description: Docker Hub token
     required: true
+  service:
+    description: Service name, will be used as tag prefix (e.g. app, worker)
+    required: false
+    default: ''
 outputs:
   tag:
     description: Published tag
