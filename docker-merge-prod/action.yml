@@ -39,11 +39,11 @@ runs:
 
     - name: Previous tag
       shell: bash
-      run: echo ${{ steps.get_tags.outputs.previousTag }}
+      run: "Previous tag: ${{ steps.get_tags.outputs.previousTag }}"
 
     - name: Latest tag
       shell: bash
-      run: echo ${{ steps.get_tags.outputs.latestTag }}
+      run: "Latest tag: ${{ steps.get_tags.outputs.latestTag }}"
 
     - name: Compute additional tag
       id: compute
