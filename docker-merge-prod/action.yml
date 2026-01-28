@@ -37,6 +37,14 @@ runs:
       id: get_tags
       uses: JinoArch/get-latest-tag@latest
 
+    - name: Previous tag
+      shell: bash
+      run: echo ${{ steps.get_tags.outputs.previousTag }}
+
+    - name: Latest tag
+      shell: bash
+      run: echo ${{ steps.get_tags.outputs.latestTag }}
+
     - name: Compute additional tag
       id: compute
       shell: bash
