@@ -1,0 +1,38 @@
+name: "Find previous and latest git tags"
+description: "Outputs the latest and previous git tags in the repository"
+outputs:
+  latest_tag:
+    description: "Latest tag"
+    value: ${{ steps.tags.outputs.latest_tag }}
+  previous_tag:
+    description: "Previous tag before latest"
+    value: ${{ steps.tags.outputs.previous_tag }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout repository
+      uses: actions/checkout@v5
+      with:
+        fetch-depth: 0
+
+    - name: Find tags
+      id: tags
+      shell: bash
+      run: |
+        set -e
+
+        # Ensure tags are available
+        git fetch --tags --force
+
+        # Get tags sorted by creation date
+        TAGS=$(git for-each-ref --sort=-creatordate --format '%(refname:short)' refs/tags)
+
+        LATEST_TAG=$(echo "$TAGS" | sed -n '1p')
+        PREVIOUS_TAG=$(echo "$TAGS" | sed -n '2p')
+
+        echo "Latest tag: $LATEST_TAG"
+        echo "Previous tag: $PREVIOUS_TAG"
+
+        echo "latest_tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
+        echo "previous_tag=$PREVIOUS_TAG" >> "$GITHUB_OUTPUT"

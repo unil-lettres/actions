@@ -35,22 +35,14 @@ runs:
 
     - name: Get latest tag
       id: get_tags
-      uses: JinoArch/get-latest-tag@latest
-
-    - name: Previous tag
-      shell: bash
-      run: "Previous tag: ${{ steps.get_tags.outputs.previousTag }}"
-
-    - name: Latest tag
-      shell: bash
-      run: "Latest tag: ${{ steps.get_tags.outputs.latestTag }}"
+      uses: unil-lettres/actions/find-tags@main
 
     - name: Compute additional tag
       id: compute
       shell: bash
       run: |
         # Determine the base tag
-        LATEST='${{ inputs.tag || steps.get_tags.outputs.latestTag }}'
+        LATEST='${{ inputs.tag || steps.get_tags.outputs.latest_tag }}'
 
         # Determine the tag prefix based on service input
         PREFIX='${{ inputs.service && format('{0}-', inputs.service) || '' }}'
