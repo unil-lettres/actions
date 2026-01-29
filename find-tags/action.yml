@@ -1,5 +1,36 @@
 name: "Find previous and latest git tags"
-description: "Outputs the latest and previous git tags in the repository"
+description: >
+  Outputs the latest and previous git tags in the repository.
+  Supports sorting by creation date (default) or semantic version.
+inputs:
+  # Controls how tags are ordered:
+  # - "date": by tag creation date (default)
+  # - "semantic": by semantic version ordering
+  sort:
+    description: "How to sort tags: 'date' or 'semantic'"
+    required: false
+    default: "date"
+  # It must transform a tag into:
+  #   "<normalized_version> <original_tag>"
+  # so that sort -V works correctly while preserving the original tag name.
+  #
+  # Default accepts:
+  #   X.Y
+  #   vX.Y
+  #   X.Y.Z
+  #   vX.Y.Z
+  #   X.Y-suffix
+  #   vX.Y-suffix
+  #   X.Y.Z-suffix
+  #   vX.Y.Z-suffix
+  #
+  # Where "suffix" can be any string (beta, rc1, rev42, etc.)
+  pattern:
+    description: >
+      Sed pattern used to normalize semantic versions.
+      Only used when sort=semantic.
+    required: false
+    default: 's/^v?([0-9]+\.[0-9]+)(\.[0-9]+)?(-.+)?$/\1\2\3 &/'
 outputs:
   latest_tag:
     description: "Latest tag"
@@ -9,30 +40,61 @@ outputs:
     value: ${{ steps.tags.outputs.previous_tag }}
 
 runs:
-  using: "composite"
+  using: composite
   steps:
+    # Checkout with full history so all tags are available
     - name: Checkout repository
       uses: actions/checkout@v5
       with:
         fetch-depth: 0
 
+    # Core logic: fetch tags, sort them, and expose outputs
     - name: Find tags
       id: tags
       shell: bash
       run: |
-        set -e
+        set -euo pipefail
 
-        # Ensure tags are available
+        # Ensure all remote tags are present locally
         git fetch --tags --force
 
-        # Get tags sorted by creation date
-        TAGS=$(git for-each-ref --sort=-creatordate --format '%(refname:short)' refs/tags)
+        SORT_MODE="${{ inputs.sort }}"
+        SEMANTIC_PATTERN="${{ inputs.pattern }}"
+
+        if [[ "$SORT_MODE" == "semantic" ]]; then
+          echo "Using semantic version sorting"
+
+          # 1. List tags
+          # 2. Normalize versions using sed (keeps original tag name)
+          # 3. Sort using version-aware sort (descending)
+          TAGS=$(
+            git tag |
+            sed -E "$SEMANTIC_PATTERN" |
+            sort -Vr
+          )
+        else
+          echo "Using creation date sorting"
+
+          # Sort tags by creation date (newest first)
+          TAGS=$(
+            git for-each-ref \
+              --sort=-creatordate \
+              --format '%(refname:short)' \
+              refs/tags
+          )
+        fi
 
         LATEST_TAG=$(echo "$TAGS" | sed -n '1p')
         PREVIOUS_TAG=$(echo "$TAGS" | sed -n '2p')
 
-        echo "Latest tag: $LATEST_TAG"
-        echo "Previous tag: $PREVIOUS_TAG"
+        # Fail explicitly if no tag was found
+        if [[ -z "${LATEST_TAG:-}" ]]; then
+          echo "::error::No tags found matching the selected mode"
+          exit 1
+        fi
+
+        echo "Latest tag:   $LATEST_TAG"
+        echo "Previous tag: ${PREVIOUS_TAG:-<none>}"
 
         echo "latest_tag=$LATEST_TAG" >> "$GITHUB_OUTPUT"
         echo "previous_tag=$PREVIOUS_TAG" >> "$GITHUB_OUTPUT"
