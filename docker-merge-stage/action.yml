@@ -45,7 +45,7 @@ runs:
         echo "additional_tag=$ADDITIONAL_TAG" >> "$GITHUB_OUTPUT"
 
     - name: Merge & push
-      uses: unil-lettres/actions/docker-merge@v2.2.0
+      uses: unil-lettres/actions/docker-merge@main
       with:
         image_repository: ${{ inputs.image_repository }}
         tag: ${{ inputs.service != '' && format('{0}-stage-latest', inputs.service) || 'stage-latest' }}
