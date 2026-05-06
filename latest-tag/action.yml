@@ -26,7 +26,7 @@ inputs:
     description: "Maximum number of pages to fetch"
     required: false
     default: "1"
-  # Default matches: (type-)v?X.Y(.Z)(-suffix)(-shortsha-timestamp)
+  # Default matches: (prefix-)v?X.Y(.Z)(-suffix)(-shortsha-timestamp)
   #
   # Examples matched by the default:
   #   worker-v1.12.0-70ce602-20260503231839
