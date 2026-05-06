@@ -8,5 +8,6 @@ Actions:
  - docker-merge-prod: download digests, compute prod tag (conditional by event), merge multi-arch, output tag.
  - job-execution: determine whether jobs should run based on event type and VERSION file changes.
  - find-tags: outputs the latest and previous git tags in the repository.
+ - latest-tag: find the latest tag of a DockerHub repository matching a version pattern.
 
 For full inputs, outputs, and examples see the README (if present) or action.yml inside each directory.

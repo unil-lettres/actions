@@ -1,0 +1,150 @@
+name: "Find latest DockerHub tag"
+description: >
+  Queries the DockerHub API to find the most recent tag of a repository
+  that matches a given regular expression.
+inputs:
+  # Required: DockerHub repository in "org/repo" form
+  image_repository:
+    description: "DockerHub repository (e.g. myorg/myapp)"
+    required: true
+  # Optional: Both dockerhub_username and dockerhub_token must be set to activate authentication
+  dockerhub_username:
+    description: "DockerHub username"
+    required: false
+    default: ""
+  dockerhub_token:
+    description: "DockerHub access token or password"
+    required: false
+    default: ""
+  # Number of tags fetched per page (DockerHub maximum is 100)
+  page_size:
+    description: "Number of tags per page (max 100)"
+    required: false
+    default: "100"
+  # Maximum number of pages to fetch (each page = page_size tags)
+  max_pages:
+    description: "Maximum number of pages to fetch"
+    required: false
+    default: "1"
+  # Default matches: (type-)v?X.Y(.Z)(-suffix)(-shortsha-timestamp)
+  #
+  # Examples matched by the default:
+  #   worker-v1.12.0-70ce602-20260503231839
+  #   v1.1.0-2892a5c-20260503222047
+  #   v26.03
+  #   v25.07.3-rev1-0f44f6a-20251110013625
+  #   4.15.0
+  #   4.14.0-7a29abe-20260426232040
+  pattern:
+    description: "Regex used to filter tag names"
+    required: false
+    default: '^([a-zA-Z]+-)?v?[0-9]+\.[0-9]+(\.[0-9]+)?(-[a-zA-Z0-9]+)?(-[a-f0-9]{7}-[0-9]{14,15})?$'
+outputs:
+  tag:
+    description: "Latest matching tag name"
+    value: ${{ steps.find.outputs.tag }}
+
+runs:
+  using: composite
+  steps:
+    - name: Find latest DockerHub tag
+      id: find
+      shell: bash
+      run: |
+        set -euo pipefail
+
+        IMAGE_REPOSITORY="${{ inputs.image_repository }}"
+        DH_USER="${{ inputs.dockerhub_username }}"
+        DH_TOKEN="${{ inputs.dockerhub_token }}"
+        PATTERN="${{ inputs.pattern }}"
+        PAGE_SIZE="${{ inputs.page_size }}"
+        MAX_PAGES="${{ inputs.max_pages }}"
+
+        BASE_URL="https://hub.docker.com/v2/repositories/${IMAGE_REPOSITORY}/tags"
+        AUTH_HEADER=""
+
+        # Secure temp file - random name, always deleted on exit
+        TMPFILE=$(mktemp)
+        trap 'rm -f "$TMPFILE"' EXIT
+
+        # ── Optional authentication ──────────────────────────────────────────
+        if [[ -n "$DH_USER" && -n "$DH_TOKEN" ]]; then
+          echo "::add-mask::${DH_TOKEN}"
+          echo "Authenticating with DockerHub"
+
+          # Use jq to build JSON safely
+          LOGIN_PAYLOAD=$(jq -n \
+            --arg u "$DH_USER" \
+            --arg p "$DH_TOKEN" \
+            '{username: $u, password: $p}')
+
+          LOGIN_HTTP=$(curl -s -o "$TMPFILE" -w "%{http_code}" \
+            -X POST "https://hub.docker.com/v2/users/login" \
+            -H "Content-Type: application/json" \
+            -d "$LOGIN_PAYLOAD" \
+            2>/dev/null || echo "000")
+
+          if [[ "$LOGIN_HTTP" == "200" ]]; then
+            JWT=$(jq -r '.token' "$TMPFILE")
+            echo "::add-mask::${JWT}"
+            AUTH_HEADER="Authorization: JWT ${JWT}"
+            echo "Authentication successful."
+          else
+            echo "::warning::DockerHub authentication failed (HTTP ${LOGIN_HTTP}); continuing anonymously"
+          fi
+        fi
+
+        # ── Paginated tag fetch (newest first, max max_pages pages) ──────────
+        echo "Fetching tags for '${IMAGE_REPOSITORY}' (page_size=${PAGE_SIZE}, max_pages=${MAX_PAGES})..."
+
+        NEXT_URL="${BASE_URL}?page_size=${PAGE_SIZE}&ordering=last_updated"
+        ALL_TAGS=""
+        COLLECTED=0
+        PAGES_FETCHED=0
+
+        while [[ -n "$NEXT_URL" && "$NEXT_URL" != "null" ]]; do
+          PAGE_HTTP=$(curl -s -o "$TMPFILE" -w "%{http_code}" \
+            ${AUTH_HEADER:+-H "$AUTH_HEADER"} \
+            "$NEXT_URL" 2>/dev/null || echo "000")
+
+          if [[ "$PAGE_HTTP" != "200" ]]; then
+            echo "::warning::DockerHub API request failed (HTTP ${PAGE_HTTP})"
+            exit 1
+          fi
+
+          RESPONSE=$(cat "$TMPFILE")
+
+          # Extract tag names from this page
+          PAGE_TAGS=$(echo "$RESPONSE" | jq -r '.results[].name')
+          PAGE_COUNT=$(echo "$PAGE_TAGS" | grep -c . || true)
+
+          ALL_TAGS="${ALL_TAGS}${PAGE_TAGS}"$'\n'
+          COLLECTED=$(( COLLECTED + PAGE_COUNT ))
+          PAGES_FETCHED=$(( PAGES_FETCHED + 1 ))
+
+          echo "  Page ${PAGES_FETCHED}: fetched ${PAGE_COUNT} tags (total: ${COLLECTED})"
+
+          # Stop if we reached the page limit
+          if (( PAGES_FETCHED >= MAX_PAGES )); then
+            echo "  Reached maximum page limit (${MAX_PAGES}); stopping pagination."
+            break
+          fi
+
+          # Follow next page link
+          NEXT_URL=$(echo "$RESPONSE" | jq -r '.next // "null"')
+        done
+
+        echo "Total tags fetched: ${COLLECTED} (${PAGES_FETCHED} page(s))"
+
+        # ── Filter by pattern ────────────────────────────────────────────────
+        echo "Applying pattern: ${PATTERN}"
+
+        MATCHED=$(echo "$ALL_TAGS" | grep -E "$PATTERN" | head -n 1 || true)
+
+        if [[ -z "${MATCHED:-}" ]]; then
+          echo "::warning::No tag matching the specified pattern found in ${IMAGE_REPOSITORY}"
+          exit 1
+        fi
+
+        echo "Found tag: ${MATCHED}"
+        echo "tag=${MATCHED}" >> "$GITHUB_OUTPUT"
