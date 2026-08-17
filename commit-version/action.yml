@@ -79,6 +79,7 @@ runs:
         ref: ${{ inputs.branch }}
         token: ${{ env.TARGET_TOKEN }}
         path: target-repo
+        fetch-depth: 0
 
     - id: update
       name: Update version in file
@@ -235,6 +236,26 @@ runs:
         COMMIT_MSG=${COMMIT_MSG//\{version_pairs\}/${{ steps.update.outputs.version_pairs }}}
 
         git commit -m "$COMMIT_MSG"
-        git push origin ${{ inputs.branch }}
 
-        echo "Changes committed and pushed successfully"
+        BRANCH="${{ inputs.branch }}"
+        MAX_PUSH_ATTEMPTS=5
+        for ATTEMPT in $(seq 1 "$MAX_PUSH_ATTEMPTS"); do
+          if git push origin "HEAD:$BRANCH"; then
+            echo "Changes committed and pushed successfully"
+            exit 0
+          fi
+
+          if [ "$ATTEMPT" -eq "$MAX_PUSH_ATTEMPTS" ]; then
+            echo "Error: Could not push changes after $MAX_PUSH_ATTEMPTS attempts"
+            exit 1
+          fi
+
+          echo "Push rejected because the remote branch changed, rebasing and retrying (attempt $((ATTEMPT + 1))/$MAX_PUSH_ATTEMPTS)"
+          git fetch origin "$BRANCH"
+          if ! git rebase "origin/$BRANCH"; then
+            git rebase --abort
+            echo "Error: Could not rebase onto the updated remote branch, manual conflict resolution is required"
+            exit 1
+          fi
+          sleep "$((ATTEMPT * 2))"
+        done
