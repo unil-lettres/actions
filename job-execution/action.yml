@@ -10,6 +10,10 @@ inputs:
   image_repository:
     description: 'Docker Hub repository name'
     required: true
+  version:
+    description: 'Optional version to use instead of reading the VERSION file'
+    required: false
+    default: ''
 outputs:
   run-merge-build:
     description: 'Whether merge-build job should run'
@@ -30,15 +34,23 @@ runs:
     - name: Check if VERSION file changed
       id: check-version
       shell: bash
+      env:
+        VERSION_INPUT: ${{ inputs.version }}
       run: |
-        # Check if VERSION file exists
-        if [ ! -f VERSION ]; then
-          echo "ERROR: VERSION file not found"
-          exit 1
+        if [ -n "$VERSION_INPUT" ]; then
+          CURRENT_VERSION="$VERSION_INPUT"
+          echo "Using version from action input: ${CURRENT_VERSION}"
+        else
+          # Check if VERSION file exists
+          if [ ! -f VERSION ]; then
+            echo "ERROR: VERSION file not found"
+            exit 1
+          fi
+
+          # Read current version from VERSION file
+          CURRENT_VERSION=$(cat VERSION | tr -d '\n')
         fi
 
-        # Read current version from VERSION file
-        CURRENT_VERSION=$(cat VERSION | tr -d '\n')
         VERSION_TAG="v${CURRENT_VERSION}"
         REPO="${{ inputs.image_repository }}"
 
