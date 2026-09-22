@@ -37,7 +37,9 @@ runs:
       id: source
       shell: bash
       # Capture the caller's checkout before find-tags changes the workspace
-      run: echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      run: |
+        revision=$(git rev-parse HEAD) || exit 1
+        echo "revision=$revision" >> "$GITHUB_OUTPUT"
 
     - name: Get latest tag
       id: get_tags

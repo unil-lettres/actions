@@ -46,7 +46,9 @@ runs:
       id: source
       shell: bash
       # Use the commit checked out in the build workspace, not the event SHA
-      run: echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      run: |
+        revision=$(git rev-parse HEAD) || exit 1
+        echo "revision=$revision" >> "$GITHUB_OUTPUT"
 
     - name: Docker meta
       id: meta
