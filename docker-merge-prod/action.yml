@@ -18,6 +18,10 @@ inputs:
     description: Specific tag to use (optional, overrides auto-detected latest tag)
     required: false
     default: ''
+  repository_path:
+    description: Path to the Git repository used to determine the source revision
+    required: false
+    default: '.'
 outputs:
   tag:
     description: Published tag
@@ -36,9 +40,16 @@ runs:
     - name: Set source revision
       id: source
       shell: bash
-      # Capture the caller's checkout before find-tags changes the workspace
+      # Read the revision before find-tags changes the configured repository
       run: |
-        revision=$(git rev-parse HEAD) || exit 1
+        repository_path='${{ inputs.repository_path }}'
+        if revision=$(git -C "$repository_path" rev-parse HEAD 2>/dev/null); then
+          :
+        else
+          revision="$GITHUB_SHA"
+          ref_name="${GITHUB_REF_NAME:-$GITHUB_REF}"
+          echo "::warning::Git repository not found at '$repository_path'; using GITHUB_SHA=$revision from ref '$ref_name'"
+        fi
         echo "revision=$revision" >> "$GITHUB_OUTPUT"
 
     - name: Get latest tag

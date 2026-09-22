@@ -32,6 +32,10 @@ inputs:
     description: Optional build arguments
     required: false
     default: ""
+  repository_path:
+    description: Path to the Git repository used to determine the source revision
+    required: false
+    default: "."
 
 runs:
   using: composite
@@ -45,9 +49,16 @@ runs:
     - name: Set source revision
       id: source
       shell: bash
-      # Use the commit checked out in the build workspace, not the event SHA
+      # Read the revision from the configured repository, not the event SHA
       run: |
-        revision=$(git rev-parse HEAD) || exit 1
+        repository_path='${{ inputs.repository_path }}'
+        if revision=$(git -C "$repository_path" rev-parse HEAD 2>/dev/null); then
+          :
+        else
+          revision="$GITHUB_SHA"
+          ref_name="${GITHUB_REF_NAME:-$GITHUB_REF}"
+          echo "::warning::Git repository not found at '$repository_path'; using GITHUB_SHA=$revision from ref '$ref_name'"
+        fi
         echo "revision=$revision" >> "$GITHUB_OUTPUT"
 
     - name: Docker meta
